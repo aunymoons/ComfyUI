@@ -12,3 +12,4 @@ scipy
 tqdm
 psutil
 numpy
+requests
