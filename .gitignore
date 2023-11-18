@@ -4,6 +4,7 @@ __pycache__/
 /input/
 !/input/example.png
 /temp/
+/models/
 extra_model_paths.yaml
 /.vs
 .idea/
