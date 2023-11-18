@@ -4,7 +4,7 @@ __pycache__/
 /input/
 !/input/example.png
 /models/
-!/models/lora/*
+!/models/loras/*
 /temp/
 extra_model_paths.yaml
 /.vs
