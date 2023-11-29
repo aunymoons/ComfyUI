@@ -13,3 +13,5 @@ venv/
 !/web/extensions/logging.js.example
 !/web/extensions/core/
 /tests-ui/data/object_info.json
+custom_nodes/masquerade-nodes-comfyui/
+custom_nodes/was-node-suite-comfyui/
