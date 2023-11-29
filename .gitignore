@@ -15,3 +15,4 @@ venv/
 /tests-ui/data/object_info.json
 custom_nodes/masquerade-nodes-comfyui/
 custom_nodes/was-node-suite-comfyui/
+custom_nodes/comfyui_controlnet_aux/
