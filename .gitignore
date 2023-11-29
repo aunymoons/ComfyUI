@@ -16,3 +16,4 @@ venv/
 custom_nodes/masquerade-nodes-comfyui/
 custom_nodes/was-node-suite-comfyui/
 custom_nodes/comfyui_controlnet_aux/
+custom_nodes/ComfyUI-Impact-Pack/
