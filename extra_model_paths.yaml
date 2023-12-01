@@ -3,7 +3,7 @@
 #config for a1111 ui
 #all you have to do is change the base_path to where yours is installed
 a111:
-    base_path: C:\Users\Aunym\Documents\Repositories\stable-diffusion-webui
+    base_path: /
 
     checkpoints: models/Stable-diffusion
     configs: models/Stable-diffusion
