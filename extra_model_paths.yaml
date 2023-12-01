@@ -5,19 +5,16 @@
 a111:
     base_path: /
 
-    checkpoints: models/Stable-diffusion
-    configs: models/Stable-diffusion
-    vae: models/VAE
+    checkpoints: models/checkpoints
+    configs: models/configs
+    vae: models/vae
     loras: |
-         models/Lora
-         models/LyCORIS
+         models/loras
     upscale_models: |
-                  models/ESRGAN
-                  models/RealESRGAN
-                  models/SwinIR
-    embeddings: embeddings
+                  models/upscale_models
+    embeddings: models/embeddings
     hypernetworks: models/hypernetworks
-    controlnet: extensions\sd-webui-controlnet\models
+    controlnet: models/controlnet
 
 #other_ui:
 #    base_path: path/to/ui
