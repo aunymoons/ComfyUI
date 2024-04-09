@@ -18,12 +18,12 @@ class CenteredRectReducer:
 
     def get_centered_rect(self, x, y, width, height, padding):
         # Calculate new width and height considering the padding
-        new_width = width - 2 * padding
-        new_height = height - 2 * padding
+        new_width = width + (2 * padding)
+        new_height = height + (2 * padding)
 
         # Calculate new x and y for top-left corner
-        new_x = x + padding
-        new_y = y + padding
+        # new_x = x + padding
+        # new_y = y + padding
 
         # Uncomment below for other corners if needed
         # For top-right corner
@@ -31,8 +31,8 @@ class CenteredRectReducer:
         # new_y = y + padding
 
         # For bottom-left corner
-        # new_x = x + padding
-        # new_y = y + height - padding - new_height
+        new_x = x - padding
+        new_y = y - padding
 
         # For bottom-right corner
         # new_x = x + width - padding - new_width
