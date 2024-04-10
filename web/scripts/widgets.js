@@ -1,6 +1,19 @@
 import { api } from "./api.js"
 import "./domWidget.js";
 
+let controlValueRunBefore = false;
+export function updateControlWidgetLabel(widget) {
+	let replacement = "after";
+	let find = "before";
+	if (controlValueRunBefore) {
+		[find, replacement] = [replacement, find]
+	}
+	widget.label = (widget.label ?? widget.name).replace(find, replacement);
+}
+
+const IS_CONTROL_WIDGET = Symbol();
+const HAS_EXECUTED = Symbol();
+
 function getNumberDefaults(inputData, defaultStep, precision, enable_rounding) {
 	let defaultVal = inputData[1]["default"];
 	let { min, max, step, round} = inputData[1];
@@ -23,33 +36,70 @@ function getNumberDefaults(inputData, defaultStep, precision, enable_rounding) {
 	return { val: defaultVal, config: { min, max, step: 10.0 * step, round, precision } };
 }
 
-export function addValueControlWidget(node, targetWidget, defaultValue = "randomize", values) {
-	const widgets = addValueControlWidgets(node, targetWidget, defaultValue, values, {
+export function addValueControlWidget(node, targetWidget, defaultValue = "randomize", values, widgetName, inputData) {
+	let name = inputData[1]?.control_after_generate;
+	if(typeof name !== "string") {
+		name = widgetName;
+	}
+	const widgets = addValueControlWidgets(node, targetWidget, defaultValue, {
 		addFilterList: false,
-	});
+		controlAfterGenerateName: name
+	}, inputData);
 	return widgets[0];
 }
 
-export function addValueControlWidgets(node, targetWidget, defaultValue = "randomize", values, options) {
+export function addValueControlWidgets(node, targetWidget, defaultValue = "randomize", options, inputData) {
+	if (!defaultValue) defaultValue = "randomize";
 	if (!options) options = {};
-	
+
+	const getName = (defaultName, optionName) => {
+		let name = defaultName;
+		if (options[optionName]) {
+			name = options[optionName];
+		} else if (typeof inputData?.[1]?.[defaultName] === "string") {
+			name = inputData?.[1]?.[defaultName];
+		} else if (inputData?.[1]?.control_prefix) {
+			name = inputData?.[1]?.control_prefix + " " + name
+		}
+		return name;
+	}
+
 	const widgets = [];
-	const valueControl = node.addWidget("combo", "control_after_generate", defaultValue, function (v) { }, {
-        values: ["fixed", "increment", "decrement", "randomize"],
-        serialize: false, // Don't include this in prompt.
-    });
+	const valueControl = node.addWidget(
+		"combo",
+		getName("control_after_generate", "controlAfterGenerateName"),
+		defaultValue,
+		function () {},
+		{
+			values: ["fixed", "increment", "decrement", "randomize"],
+			serialize: false, // Don't include this in prompt.
+		}
+	);
+	valueControl[IS_CONTROL_WIDGET] = true;
+	updateControlWidgetLabel(valueControl);
 	widgets.push(valueControl);
 
 	const isCombo = targetWidget.type === "combo";
 	let comboFilter;
+	if (isCombo) {
+		valueControl.options.values.push("increment-wrap");
+	}
 	if (isCombo && options.addFilterList !== false) {
-		comboFilter = node.addWidget("string", "control_filter_list", "", function (v) {}, {
-			serialize: false, // Don't include this in prompt.
-		});
+		comboFilter = node.addWidget(
+			"string",
+			getName("control_filter_list", "controlFilterListName"),
+			"",
+			function () {},
+			{
+				serialize: false, // Don't include this in prompt.
+			}
+		);
+		updateControlWidgetLabel(comboFilter);
+
 		widgets.push(comboFilter);
 	}
 
-	valueControl.afterQueued = () => {
+	const applyWidgetControl = () => {
 		var v = valueControl.value;
 
 		if (isCombo && v !== "fixed") {
@@ -81,6 +131,12 @@ export function addValueControlWidgets(node, targetWidget, defaultValue = "rando
 				case "increment":
 					current_index += 1;
 					break;
+				case "increment-wrap":
+					current_index += 1;
+					if ( current_index >= current_length ) {
+					    current_index = 0;
+					}
+					break;
 				case "decrement":
 					current_index -= 1;
 					break;
@@ -96,7 +152,8 @@ export function addValueControlWidgets(node, targetWidget, defaultValue = "rando
 				targetWidget.value = value;
 				targetWidget.callback(value);
 			}
-		} else { //number
+		} else {
+			//number
 			let min = targetWidget.options.min;
 			let max = targetWidget.options.max;
 			// limit to something that javascript can handle
@@ -119,32 +176,71 @@ export function addValueControlWidgets(node, targetWidget, defaultValue = "rando
 				default:
 					break;
 			}
-		/*check if values are over or under their respective
-		* ranges and set them to min or max.*/
-			if (targetWidget.value < min)
-				targetWidget.value = min;
+			/*check if values are over or under their respective
+			 * ranges and set them to min or max.*/
+			if (targetWidget.value < min) targetWidget.value = min;
 
 			if (targetWidget.value > max)
 				targetWidget.value = max;
 			targetWidget.callback(targetWidget.value);
 		}
-	}
-	
+	};
+
+	valueControl.beforeQueued = () => {
+		if (controlValueRunBefore) {
+			// Don't run on first execution
+			if (valueControl[HAS_EXECUTED]) {
+				applyWidgetControl();
+			}
+		}
+		valueControl[HAS_EXECUTED] = true;
+	};
+
+	valueControl.afterQueued = () => {
+		if (!controlValueRunBefore) {
+			applyWidgetControl();
+		}
+	};
+
 	return widgets;
 };
 
-function seedWidget(node, inputName, inputData, app) {
-	const seed = ComfyWidgets.INT(node, inputName, inputData, app);
-	const seedControl = addValueControlWidget(node, seed.widget, "randomize");
+function seedWidget(node, inputName, inputData, app, widgetName) {
+	const seed = createIntWidget(node, inputName, inputData, app, true);
+	const seedControl = addValueControlWidget(node, seed.widget, "randomize", undefined, widgetName, inputData);
 
 	seed.widget.linkedWidgets = [seedControl];
 	return seed;
 }
+
+function createIntWidget(node, inputName, inputData, app, isSeedInput) {
+	const control = inputData[1]?.control_after_generate;
+	if (!isSeedInput && control) {
+		return seedWidget(node, inputName, inputData, app, typeof control === "string" ? control : undefined);
+	}
+
+	let widgetType = isSlider(inputData[1]["display"], app);
+	const { val, config } = getNumberDefaults(inputData, 1, 0, true);
+	Object.assign(config, { precision: 0 });
+	return {
+		widget: node.addWidget(
+			widgetType,
+			inputName,
+			val,
+			function (v) {
+				const s = this.options.step / 10;
+				this.value = Math.round(v / s) * s;
+			},
+			config
+		),
+	};
+}
+
 function addMultilineWidget(node, name, opts, app) {
 	const inputEl = document.createElement("textarea");
 	inputEl.className = "comfy-multiline-input";
 	inputEl.value = opts.defaultVal;
-	inputEl.placeholder = opts.placeholder || "";
+	inputEl.placeholder = opts.placeholder || name;
 
 	const widget = node.addDOMWidget(name, "customtext", inputEl, {
 		getValue() {
@@ -155,6 +251,10 @@ function addMultilineWidget(node, name, opts, app) {
 		},
 	});
 	widget.inputEl = inputEl;
+
+	inputEl.addEventListener("input", () => {
+		widget.callback?.(widget.value);
+	});
 
 	return { minWidth: 400, minHeight: 200, widget };
 }
@@ -167,6 +267,34 @@ function isSlider(display, app) {
 	return (display==="slider") ? "slider" : "number"
 }
 
+export function initWidgets(app) {
+	app.ui.settings.addSetting({
+		id: "Comfy.WidgetControlMode",
+		name: "Widget Value Control Mode",
+		type: "combo",
+		defaultValue: "after",
+		options: ["before", "after"],
+		tooltip: "Controls when widget values are updated (randomize/increment/decrement), either before the prompt is queued or after.",
+		onChange(value) {
+			controlValueRunBefore = value === "before";
+			for (const n of app.graph._nodes) {
+				if (!n.widgets) continue;
+				for (const w of n.widgets) {
+					if (w[IS_CONTROL_WIDGET]) {
+						updateControlWidgetLabel(w);
+						if (w.linkedWidgets) {
+							for (const l of w.linkedWidgets) {
+								updateControlWidgetLabel(l);
+							}
+						}
+					}
+				}
+			}
+			app.graph.setDirtyCanvas(true);
+		},
+	});
+}
+
 export const ComfyWidgets = {
 	"INT:seed": seedWidget,
 	"INT:noise_seed": seedWidget,
@@ -176,7 +304,7 @@ export const ComfyWidgets = {
 		let disable_rounding = app.ui.settings.getSettingValue("Comfy.DisableFloatRounding")
 		if (precision == 0) precision = undefined;
 		const { val, config } = getNumberDefaults(inputData, 0.5, precision, !disable_rounding);
-		return { widget: node.addWidget(widgetType, inputName, val, 
+		return { widget: node.addWidget(widgetType, inputName, val,
 			function (v) {
 				if (config.round) {
 					this.value = Math.round(v/config.round)*config.round;
@@ -186,21 +314,7 @@ export const ComfyWidgets = {
 			}, config) };
 	},
 	INT(node, inputName, inputData, app) {
-		let widgetType = isSlider(inputData[1]["display"], app);
-		const { val, config } = getNumberDefaults(inputData, 1, 0, true);
-		Object.assign(config, { precision: 0 });
-		return {
-			widget: node.addWidget(
-				widgetType,
-				inputName,
-				val,
-				function (v) {
-					const s = this.options.step / 10;
-					this.value = Math.round(v / s) * s;
-				},
-				config
-			),
-		};
+		return createIntWidget(node, inputName, inputData, app);
 	},
 	BOOLEAN(node, inputName, inputData) {
 		let defaultVal = false;
@@ -245,10 +359,14 @@ export const ComfyWidgets = {
 		if (inputData[1] && inputData[1].default) {
 			defaultValue = inputData[1].default;
 		}
-		return { widget: node.addWidget("combo", inputName, defaultValue, () => {}, { values: type }) };
+		const res = { widget: node.addWidget("combo", inputName, defaultValue, () => {}, { values: type }) };
+		if (inputData[1]?.control_after_generate) {
+			res.widget.linkedWidgets = addValueControlWidgets(node, res.widget, undefined, undefined, inputData);
+		}
+		return res;
 	},
 	IMAGEUPLOAD(node, inputName, inputData, app) {
-		const imageWidget = node.widgets.find((w) => w.name === "image");
+		const imageWidget = node.widgets.find((w) => w.name === (inputData[1]?.widget ?? "image"));
 		let uploadWidget;
 
 		function showImage(name) {
@@ -263,7 +381,7 @@ export const ComfyWidgets = {
 				subfolder = name.substring(0, folder_separator);
 				name = name.substring(folder_separator + 1);
 			}
-			img.src = api.apiURL(`/view?filename=${encodeURIComponent(name)}&type=input&subfolder=${subfolder}${app.getPreviewFormatParam()}`);
+			img.src = api.apiURL(`/view?filename=${encodeURIComponent(name)}&type=input&subfolder=${subfolder}${app.getPreviewFormatParam()}${app.getRandParam()}`);
 			node.setSizeForImage?.();
 		}
 
@@ -362,9 +480,10 @@ export const ComfyWidgets = {
 		document.body.append(fileInput);
 
 		// Create the button widget for selecting the files
-		uploadWidget = node.addWidget("button", "choose file to upload", "image", () => {
+		uploadWidget = node.addWidget("button", inputName, "image", () => {
 			fileInput.click();
 		});
+		uploadWidget.label = "choose file to upload";
 		uploadWidget.serialize = false;
 
 		// Add handler to check if an image is being dragged over our node
