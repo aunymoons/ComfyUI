@@ -14,5 +14,4 @@ psutil
 numpy
 requests
 gitpython
-pandas3d
 kornia>=0.7.1
