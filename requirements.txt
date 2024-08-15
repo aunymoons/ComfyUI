@@ -14,3 +14,4 @@ psutil
 numpy
 requests
 gitpython
+pandas3d
